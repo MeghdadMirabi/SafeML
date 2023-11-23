@@ -37,7 +37,7 @@ if cfg.network == 'SecureML':
         lr = (2 ** (-7)) * cfg.batch_size
     else:
         lr = (2 ** (-7)) * (cfg.batch_size/2)
-elif cfg.batch_size == 'Chameleon':
+elif cfg.network == 'Chameleon':
     if cfg.batch_size <= 1:
         lr = 0.01
     elif cfg.batch_size <= 10:
