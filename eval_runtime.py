@@ -1,5 +1,3 @@
-import sys
-
 import ray
 import torch
 from tqdm import tqdm
@@ -22,27 +20,7 @@ def main():
     resources["mediator"] = util.constants.num_mediators
     if not ray.is_initialized(): ray.init(log_to_driver=cfg.log_warnings, resources=resources)
 
-    network = 'SecureML' if len(sys.argv) < 2 else sys.argv[1]
-    batch_size = 1
-    iterations = 10
-
-    lr = None
-    if network == 'SecureML':
-        if batch_size <= 1:
-            lr = 2 ** (-7)
-        elif batch_size <= 10:
-            lr = (2 ** (-7)) * batch_size
-        else:
-            lr = (2 ** (-7)) * (batch_size / 2)
-    elif network == 'Chameleon':
-        if batch_size <= 1:
-            lr = 0.01
-        elif batch_size <= 10:
-            lr = 0.05
-        else:
-            lr = 0.1
-
-    print(f'network={network}, batch_size={batch_size}, lr={lr}, iterations={iterations}')
+    print(f'network={cfg.network}, batch_size={cfg.batch_size}, iterations={cfg.iterations}, train={cfg.train}')
 
     device = 'cpu'
 
@@ -69,7 +47,7 @@ def main():
 
     ray.get([model_owner.set_mediators.remote(mediators)])
 
-    distributed_nn = construct_network(name=network, type='distributed', batch_size=batch_size, lr=lr,
+    distributed_nn = construct_network(name=cfg.network, type='distributed', batch_size=cfg.batch_size, lr=util.constants.lr,
                                        auxiliary_nodes=auxiliaries, mediator_nodes=mediators, ran_group=ran_group,
                                        output_mask=output_mask)
 
@@ -94,12 +72,11 @@ def main():
     ray.get([a.set_workers.remote(workers_dict) for a in auxiliaries])
     ray.get([m.set_workers.remote(workers_dict) for m in mediators])
 
-    train = True if len(sys.argv) < 3 else (sys.argv[2] == 'train')
     times = []
     X_shares, Y_shares = [[] for _ in range(cfg.num_groups)], [[] for _ in range(cfg.num_groups)]
-    for i in tqdm(range(iterations * batch_size)):
-        if (i + 1) % batch_size == 0 and i > 0:
-            get_runtime(X_shares, Y_shares, group_nums, times, train, workers)
+    for i in tqdm(range(cfg.iterations * cfg.batch_size)):
+        if (i + 1) % cfg.batch_size == 0 and i > 0:
+            get_runtime(X_shares, Y_shares, group_nums, times, cfg.train, workers)
             X_shares, Y_shares = [[] for _ in range(cfg.num_groups)], [[] for _ in range(cfg.num_groups)]
 
         _X_shares, _Y_shares = data_owner.mnist_train_shares(i)
@@ -107,7 +84,7 @@ def main():
             X_shares[j].append(_X_share)
             Y_shares[j].append(_Y_share)
 
-    get_runtime(X_shares, Y_shares, group_nums, times, train, workers)
+    get_runtime(X_shares, Y_shares, group_nums, times, cfg.train, workers)
     total_runtime = sum(times)
     avg_time_per_iteration = total_runtime / len(times)
     total_runtime_ex_0 = sum(times[1:])
@@ -119,9 +96,7 @@ def main():
 
 
 def get_runtime(X_shares, Y_shares, group_nums, times, train, workers):
-    res_dict = ray.get(
-        [w.iterate.remote(X_shares[j], Y_shares[j], train=train, return_result=False, return_runtime=True) for w, j in
-         zip(workers, group_nums)])
+    res_dict = ray.get([w.iterate.remote(X_shares[j], Y_shares[j], train=train, return_result=False, return_runtime=True) for w, j in zip(workers, group_nums)])
     start_times = [res[0] for res in res_dict]
     end_times = [res[1] for res in res_dict]
     times.append(max(end_times) - min(start_times))
