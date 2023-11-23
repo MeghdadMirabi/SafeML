@@ -10,7 +10,7 @@ batch_size = 1
 threat_model = 'malicious'
 
 num_groups = 2
-max_byzantine_nodes_per_group = 0
+max_byzantine_nodes_per_group = 1
 replication_factor = 2 * max_byzantine_nodes_per_group + 1
 
 optimize_communication = True
